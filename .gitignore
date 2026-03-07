@@ -1,0 +1,41 @@
+# Build directories
+/build/
+/cmake-build-*/
+
+# CMake generated files
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CMakeFiles/
+
+# Visual Studio generated files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.VC.db
+*.VC.opendb
+*.ilk
+*.pdb
+*.exp
+*.lib
+*.obj
+*.idb
+*.tlog
+*.lastbuildstate
+
+# CUDA / profiler artifacts
+*.cu.cache
+*.deps
+*.nsys-rep
+*.nvvp
+
+# Executables and launch helpers
+*.exe
+*.exe.recipe
+launch_*.bat
+
+# Experiment outputs
+results.csv
+experiments_cuda/**/results.csv
+
