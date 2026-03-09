@@ -47,7 +47,7 @@ int main()
 	int block = 256;
 	int grid = (N + block - 1) / block;
 
-	for (int i = 0; i < 1000; ++i)
+	for (int i = 0; i < 10; ++i)
 	{
 		int b = i % 2;
 
