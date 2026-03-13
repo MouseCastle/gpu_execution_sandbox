@@ -129,15 +129,14 @@ int main(int argc, char** argv)
     }
 
     // Streams
-    cudaStream_t stream_copy = 0;
-    cudaStream_t stream_compute = 0;
+    cudaStream_t stream[2] = {0, 0};
 
     if (case_.num_streams == 2) {
-        CUDA_CHECK(cudaStreamCreate(&stream_copy));
-        CUDA_CHECK(cudaStreamCreate(&stream_compute));
+        CUDA_CHECK(cudaStreamCreate(&stream[0]));
+        CUDA_CHECK(cudaStreamCreate(&stream[1]));
     } else {
-        stream_copy = 0;
-        stream_compute = 0;
+        stream[0] = 0;
+        stream[1] = 0;
     }
 
     // Events
@@ -152,31 +151,25 @@ int main(int argc, char** argv)
     const int block = 256;
     const int grid = (n + block - 1) / block;
 
+    const bool is_double_buffer = case_.num_buffers == 2;
+
     auto one_iteration = [&](int iter) {
         const int b = iter % case_.num_buffers;
+
+        cudaStream_t& stream_copy = is_double_buffer ? stream[b] : stream[0];
+        cudaStream_t& stream_compute = is_double_buffer ? stream[b] : stream[1];
 
         // HtoD
         CUDA_CHECK(cudaMemcpyAsync(dx[b], hx[b], bytes, cudaMemcpyHostToDevice, stream_copy));
         CUDA_CHECK(cudaEventRecord(copy_done[b], stream_copy));
 
         // Kernel dependency on HtoD
-        if (case_.num_streams == 2) {
+        if (args.case_type == CaseType::C_pinned_two_single) {
             CUDA_CHECK(cudaStreamWaitEvent(stream_compute, copy_done[b], 0));
         }
 
         axpby_kernel<<<grid, block, 0, stream_compute>>>(dx[b], dy[b], n, 1.1f, 2.2f);
         CUDA_CHECK(cudaGetLastError());
-
-        CUDA_CHECK(cudaEventRecord(kernel_done[b], stream_compute));
-
-        // DtoH dependency on kernel completion
-        if (args.case_type == CaseType::D_pinned_two_double) {
-            CUDA_CHECK(cudaStreamWaitEvent(stream_copy, kernel_done[b], 0));
-        } else if (case_.num_streams != 2) {
-            // default stream serialize already guarantees this
-        } else {
-            // Case C intentionally has no kernel_done wait
-        }
 
         CUDA_CHECK(cudaMemcpyAsync(hy[b], dy[b], bytes, cudaMemcpyDeviceToHost, stream_copy));
     };
@@ -191,14 +184,16 @@ int main(int argc, char** argv)
     CudaEventTimer gt;
     CpuTimer ct;
 
+    cudaStream_t& last_stream = is_double_buffer ? stream[args.iters % 2 + 1] : stream[1];
+
     ct.tic();
-    gt.tic(stream_compute);
+    gt.tic(last_stream);
 
     for (int i = 0; i < args.iters; ++i) {
         one_iteration(i);
     }
 
-    float gpu_ms = gt.toc_ms(stream_compute);
+    float gpu_ms = gt.toc_ms(last_stream);
     CUDA_CHECK(cudaDeviceSynchronize());
     double cpu_ms = ct.toc_ms();
 
@@ -254,8 +249,8 @@ int main(int argc, char** argv)
     }
 
     if (case_.num_streams == 2) {
-        CUDA_CHECK(cudaStreamDestroy(stream_copy));
-        CUDA_CHECK(cudaStreamDestroy(stream_compute));
+        CUDA_CHECK(cudaStreamDestroy(stream[0]));
+        CUDA_CHECK(cudaStreamDestroy(stream[1]));
     }
 
     return 0;
