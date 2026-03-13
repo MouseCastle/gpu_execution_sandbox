@@ -67,6 +67,12 @@ static const char* case_name(CaseType c)
     }
 }
 
+struct CaseOptions {
+    bool pinned = false;
+    int num_streams = 1;
+    int num_buffers = 1;
+};
+
 int main(int argc, char** argv)
 {
     Args args = parse_args(argc, argv);
@@ -74,24 +80,29 @@ int main(int argc, char** argv)
     const int n = args.batch * args.elements;
     const size_t bytes = size_t(n) * sizeof(float);
 
-    const bool pinned =
-        args.case_type == CaseType::B_pinned_single_single ||
-        args.case_type == CaseType::C_pinned_two_single ||
-        args.case_type == CaseType::D_pinned_two_double;
+    CaseOptions case_{};
 
-    const bool two_streams =
-        args.case_type == CaseType::C_pinned_two_single ||
-        args.case_type == CaseType::D_pinned_two_double;
-
-    const int num_buffers =
-        args.case_type == CaseType::D_pinned_two_double ? 2 : 1;
+    switch (args.case_type) {
+        case CaseType::A_pageable_single_single:
+            case_ = {false, 1, 1};
+            break;
+        case CaseType::B_pinned_single_single:
+            case_ = {true, 1, 1};
+            break;
+        case CaseType::C_pinned_two_single:
+            case_ = {true, 2, 1};
+            break;
+        case CaseType::D_pinned_two_double:
+            case_ = {true, 2, 2};
+            break;
+    }
 
     // Host buffers
     float* hx[2] = { nullptr, nullptr };
     float* hy[2] = { nullptr, nullptr };
 
-    for (int i = 0; i < num_buffers; ++i) {
-        if (pinned) {
+    for (int i = 0; i < case_.num_buffers; ++i) {
+        if (case_.pinned) {
             CUDA_CHECK(cudaHostAlloc(&hx[i], bytes, cudaHostAllocDefault));
             CUDA_CHECK(cudaHostAlloc(&hy[i], bytes, cudaHostAllocDefault));
         } else {
@@ -112,7 +123,7 @@ int main(int argc, char** argv)
     // Device buffers
     float* dx[2] = { nullptr, nullptr };
     float* dy[2] = { nullptr, nullptr };
-    for (int i = 0; i < num_buffers; ++i) {
+    for (int i = 0; i < case_.num_buffers; ++i) {
         CUDA_CHECK(cudaMalloc(&dx[i], bytes));
         CUDA_CHECK(cudaMalloc(&dy[i], bytes));
     }
@@ -121,7 +132,7 @@ int main(int argc, char** argv)
     cudaStream_t stream_copy = 0;
     cudaStream_t stream_compute = 0;
 
-    if (two_streams) {
+    if (case_.num_streams == 2) {
         CUDA_CHECK(cudaStreamCreate(&stream_copy));
         CUDA_CHECK(cudaStreamCreate(&stream_compute));
     } else {
@@ -133,7 +144,7 @@ int main(int argc, char** argv)
     cudaEvent_t copy_done[2] = { nullptr, nullptr };
     cudaEvent_t kernel_done[2] = { nullptr, nullptr };
 
-    for (int i = 0; i < num_buffers; ++i) {
+    for (int i = 0; i < case_.num_buffers; ++i) {
         CUDA_CHECK(cudaEventCreate(&copy_done[i]));
         CUDA_CHECK(cudaEventCreate(&kernel_done[i]));
     }
@@ -142,14 +153,14 @@ int main(int argc, char** argv)
     const int grid = (n + block - 1) / block;
 
     auto one_iteration = [&](int iter) {
-        const int b = iter % num_buffers;
+        const int b = iter % case_.num_buffers;
 
         // HtoD
         CUDA_CHECK(cudaMemcpyAsync(dx[b], hx[b], bytes, cudaMemcpyHostToDevice, stream_copy));
         CUDA_CHECK(cudaEventRecord(copy_done[b], stream_copy));
 
         // Kernel dependency on HtoD
-        if (two_streams) {
+        if (case_.num_streams == 2) {
             CUDA_CHECK(cudaStreamWaitEvent(stream_compute, copy_done[b], 0));
         }
 
@@ -161,7 +172,7 @@ int main(int argc, char** argv)
         // DtoH dependency on kernel completion
         if (args.case_type == CaseType::D_pinned_two_double) {
             CUDA_CHECK(cudaStreamWaitEvent(stream_copy, kernel_done[b], 0));
-        } else if (!two_streams) {
+        } else if (case_.num_streams != 2) {
             // default stream serialize already guarantees this
         } else {
             // Case C intentionally has no kernel_done wait
@@ -193,7 +204,7 @@ int main(int argc, char** argv)
 
     // checksum
     double checksum = 0.0;
-    for (int i = 0; i < num_buffers; ++i) {
+    for (int i = 0; i < case_.num_buffers; ++i) {
         checksum += hy[i][0];
         checksum += hy[i][n / 2];
         checksum += hy[i][n - 1];
@@ -205,8 +216,8 @@ int main(int argc, char** argv)
     const double avg_iter_ms = cpu_ms / double(args.iters);
 
     std::printf("case=%s\n", case_name(args.case_type));
-    std::printf("batch=%d elements=%d n=%d buffers=%d pinned=%d two_streams=%d\n",
-                args.batch, args.elements, n, num_buffers, (int)pinned, (int)two_streams);
+    std::printf("batch=%d elements=%d n=%d buffers=%d pinned=%d num_streams=%d\n",
+                args.batch, args.elements, n, case_.num_buffers, (int)case_.pinned, case_.num_streams);
     std::printf("gpu_ms(total compute timeline) = %.3f ms\n", gpu_ms);
     std::printf("cpu_ms(total)                  = %.3f ms\n", cpu_ms);
     std::printf("avg_iter_ms                    = %.6f ms\n", avg_iter_ms);
@@ -221,19 +232,19 @@ int main(int argc, char** argv)
                   "%s,%d,%d,%d,%d,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f",
                   case_name(args.case_type),
                   args.batch, args.elements, args.iters, args.warmup,
-                  num_buffers, (int)pinned, (int)two_streams,
+                  case_.num_buffers, (int)case_.pinned, case_.num_streams,
                   (double)gpu_ms, cpu_ms, avg_iter_ms, gelem_per_s, checksum);
 
     append_csv_row(args.out_csv, header, row);
 
     // cleanup
-    for (int i = 0; i < num_buffers; ++i) {
+    for (int i = 0; i < case_.num_buffers; ++i) {
         CUDA_CHECK(cudaFree(dx[i]));
         CUDA_CHECK(cudaFree(dy[i]));
         CUDA_CHECK(cudaEventDestroy(copy_done[i]));
         CUDA_CHECK(cudaEventDestroy(kernel_done[i]));
 
-        if (pinned) {
+        if (case_.pinned) {
             CUDA_CHECK(cudaFreeHost(hx[i]));
             CUDA_CHECK(cudaFreeHost(hy[i]));
         } else {
@@ -242,7 +253,7 @@ int main(int argc, char** argv)
         }
     }
 
-    if (two_streams) {
+    if (case_.num_streams == 2) {
         CUDA_CHECK(cudaStreamDestroy(stream_copy));
         CUDA_CHECK(cudaStreamDestroy(stream_compute));
     }
