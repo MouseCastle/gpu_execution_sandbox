@@ -42,3 +42,12 @@
 - Case B pinned single single 경우, A보다 좀 더 host latency가 줄어들어 Avg Iter가 확연이 줆을 확인할 수 있음
 - Case C pinned two single 경우, copy/compute stream을 나눈 효과와 pinned로 구성한 효과로 겹침이 있어 계산 효율 향상으로 인해 Avg Iter가 가장 낮고, Throughput이 가장 높음
 - Case D pinned two double 경우, stream/pinned의 이득은 있으나, 동기화 구간으로 인한 직렬화로 Case C보다 높은 Avg Iter latency를 보임
+
+## Modified Case D: double stream double buffer overlap
+
+- 기존 코드는 stream 두 개를 이용하여 실험하였으나 copy/compute stream간 synchronize로 인해 overlap이 의도적으로 배제되었음
+- 그래서 실험 구조를 바꾸어 stream간 연산 중첩을 구현
+- 실험 결과 연산 중첩이 일어나지 않음
+
+ > `RTX 4070 laptop` 기준으로 copy engine이 1개이기 때문에, copy는 중첩이 되지 않음
+ > async로 stream을 나누어도 중첩이 되지 않음
