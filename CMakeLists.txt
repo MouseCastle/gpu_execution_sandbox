@@ -46,3 +46,14 @@ target_compile_options(exp02_5_overlap_cases PRIVATE
 	$<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
 	$<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
 )
+
+add_executable(exp03_block_size_sweep
+	experiments_cuda/exp03_block_size_sweep/main.cu
+)
+
+target_link_libraries(exp03_block_size_sweep PRIVATE sandbox_common)
+
+target_compile_options(exp03_block_size_sweep PRIVATE
+	$<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+	$<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
+)
