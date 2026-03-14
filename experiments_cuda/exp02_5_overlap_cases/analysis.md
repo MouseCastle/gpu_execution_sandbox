@@ -51,3 +51,19 @@
 
  > `RTX 4070 laptop` 기준으로 copy engine이 1개이기 때문에, copy는 중첩이 되지 않음
  > async로 stream을 나누어도 중첩이 되지 않음
+
+ ## Case E: pinned copy overlap
+
+- 해당 실험은 DtoH - HtoD 간의 방향성이 달라 copy engine 중첩이 일어나지 않은 것을 가정
+- `RTX 4070 laptop` 환경에서 DtoH - DtoH, HtoD - HtoD로 방향을 중첩하면 stream간 copy 병렬화가 되는 가에 대한 실험을 추가
+ 
+![nsight systems case E](./screenshots/exp02_5_overlap_case_E_nsight_systems.png)
+
+- 실험 결과, copy 간 방향성을 통일하여도 중첩이 되지 않는 것을 확인
+- 이는 하나의 copy engine은 하나의 작업만을 수행할 수 있음을 확인
+
+![nsight systems case E extra](./screenshots/exp02_5_overlap_case_E_extra_nsight_systems.png)
+
+- 추가 실험에서 copy stream을 하나로 통일하여도 결과는 동일
+- **결론적으로 copy engine 하나에서 병렬화된 copy 작업을 기대할 수 없음**
+
