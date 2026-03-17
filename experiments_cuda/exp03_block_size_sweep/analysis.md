@@ -23,3 +23,15 @@
 | 1024| 55.15 | 10.20 | 45.61 | 6.34 | Long Scoreboard 39.85, Not Selected 0.65 |
 
 - 실험에 사용된 axpby_kernel은 연산이 매우 짧고 빈번하여, 메모리 load/store가 latency에 지배적 (memory-bound)
+- 또한 memory-bound인 것은 Long Scoreboard가 높은 것으로 확인할 수 있음 -> Long Scoreboard는 메모리 로드와 같이 지연 시간이 긴 결과를 기다리는 상태를 의미
+
+- block size 64에서는 block 당 warp 수가 낮은 것에 더해, memory-bound인 상황이기 때문에 warp scheduling이 효율적이지 않아 achieved occupancy가 낮게 나온 것으로 보임
+  - 그 때문에 latency가 상대적으로 높게 나옴
+
+- block size 128 ~ 512는 block 당 warp수가 어느정도 충분하기 때문에, warp scheduling이 잘 이루어져 achieved occupancy가 75~80 정도 나온 것으로 보임
+  - 그 덕분에 latency가 안정적
+
+- block size 1024는 block 당 warp수는 많으나, SM 당 1 block이 할당되어 block간 유동성 및 절대적인 warp 수 부족으로 achieved occupancy가 낮게 나온 것으로 보임
+  - 그 때문에 latency가 높게 나옴
+
+- achieved occupancy가 성능과 1대1 대응되지는 않지만, 간단한 연산이기 때문에 warp가 잘 활용되어 latency 성능과 잘 맞아 떨어진 것으로 보임
