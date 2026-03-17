@@ -11,19 +11,19 @@
 #include "common/cuda_timer.cuh"
 
 enum class AccessPattern : int {
-    Coalesced = 0,
-    Misaligned = 1,
-    Strided = 2,
+    A_Coalesced = 0,
+    B_Misaligned = 1,
+    C_Strided = 2,
 };
 
 struct Args {
-    int elements = 1 << 22;
+    int elements = 1 << 22; // about 16 million elements, ~64 MiB per array
     int iters = 1000;
     int warmup = 100;
     int block_size = 256;
     int stride = 2;
     int offset = 1;
-    std::string pattern = "coalesced";
+    std::string pattern = "A";  // A=coalesced, B=misaligned, C=strided
     std::string out_csv = "results.csv";
 };
 
@@ -53,21 +53,21 @@ static bool is_supported_block_size(int block_size)
 
 static AccessPattern parse_pattern(const std::string& pattern)
 {
-    if (pattern == "coalesced") return AccessPattern::Coalesced;
-    if (pattern == "misaligned") return AccessPattern::Misaligned;
-    if (pattern == "strided") return AccessPattern::Strided;
+    if (pattern == "A") return AccessPattern::A_Coalesced;
+    if (pattern == "B") return AccessPattern::B_Misaligned;
+    if (pattern == "C") return AccessPattern::C_Strided;
 
     std::fprintf(stderr, "Unsupported pattern: %s\n", pattern.c_str());
-    std::fprintf(stderr, "Use one of: coalesced, misaligned, strided\n");
+    std::fprintf(stderr, "Use one of: A(coalesced), B(misaligned), C(strided)\n");
     std::exit(1);
 }
 
 static const char* pattern_name(AccessPattern pattern)
 {
     switch (pattern) {
-    case AccessPattern::Coalesced: return "coalesced";
-    case AccessPattern::Misaligned: return "misaligned";
-    case AccessPattern::Strided: return "strided";
+    case AccessPattern::A_Coalesced: return "coalesced";
+    case AccessPattern::B_Misaligned: return "misaligned";
+    case AccessPattern::C_Strided: return "strided";
     default: return "unknown";
     }
 }
@@ -77,11 +77,11 @@ static size_t max_index_touched(int logical_n, AccessPattern pattern, int stride
     if (logical_n <= 0) return 0;
 
     switch (pattern) {
-    case AccessPattern::Coalesced:
+    case AccessPattern::A_Coalesced:
         return static_cast<size_t>(logical_n - 1);
-    case AccessPattern::Misaligned:
+    case AccessPattern::B_Misaligned:
         return static_cast<size_t>(logical_n - 1 + offset);
-    case AccessPattern::Strided:
+    case AccessPattern::C_Strided:
         return static_cast<size_t>(logical_n - 1) * static_cast<size_t>(stride);
     default:
         return static_cast<size_t>(logical_n - 1);
@@ -94,11 +94,11 @@ __host__ __device__ __forceinline__ int compute_index(int tid,
                                                       int offset)
 {
     switch (pattern) {
-    case AccessPattern::Coalesced:
+    case AccessPattern::A_Coalesced:
         return tid;
-    case AccessPattern::Misaligned:
+    case AccessPattern::B_Misaligned:
         return tid + offset;
-    case AccessPattern::Strided:
+    case AccessPattern::C_Strided:
         return tid * stride;
     default:
         return tid;
