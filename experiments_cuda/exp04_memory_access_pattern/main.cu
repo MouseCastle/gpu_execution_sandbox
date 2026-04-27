@@ -153,20 +153,26 @@ int main(int argc, char** argv)
     std::vector<float> hy(physical_n, 0.0f);
     std::iota(hx.begin(), hx.end(), 0.0f);
 
-    float* dx = nullptr;
-    float* dy = nullptr;
-    CUDA_CHECK(cudaMalloc(&dx, bytes));
-    CUDA_CHECK(cudaMalloc(&dy, bytes));
+    float* dx[2] = {nullptr, nullptr};
+    float* dy[2] = {nullptr, nullptr};
+    CUDA_CHECK(cudaMalloc(&dx[0], bytes));
+    CUDA_CHECK(cudaMalloc(&dy[0], bytes));
 
-    CUDA_CHECK(cudaMemcpy(dx, hx.data(), bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemset(dy, 0, bytes));
+    CUDA_CHECK(cudaMalloc(&dx[1], bytes));
+    CUDA_CHECK(cudaMalloc(&dy[1], bytes));
+
+    CUDA_CHECK(cudaMemcpy(dx[0], hx.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(dy[0], 0, bytes));
+    CUDA_CHECK(cudaMemcpy(dx[1], hx.data(), bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(dy[1], 0, bytes));
 
     const int block = args.block_size;
     const int grid = (args.elements + block - 1) / block;
 
     for (int i = 0; i < args.warmup; ++i) {
+        int idx = i % 2;
         memory_access_kernel<<<grid, block>>>(
-            dx, dy, args.elements, pattern, args.stride, args.offset);
+            dx[idx], dy[idx], args.elements, pattern, args.stride, args.offset);
         CUDA_CHECK(cudaGetLastError());
     }
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -178,8 +184,9 @@ int main(int argc, char** argv)
     gt.tic();
 
     for (int i = 0; i < args.iters; ++i) {
+        int idx = i % 2;
         memory_access_kernel<<<grid, block>>>(
-            dx, dy, args.elements, pattern, args.stride, args.offset);
+            dx[idx], dy[idx], args.elements, pattern, args.stride, args.offset);
         CUDA_CHECK(cudaGetLastError());
     }
 
@@ -187,7 +194,8 @@ int main(int argc, char** argv)
     CUDA_CHECK(cudaDeviceSynchronize());
     double cpu_ms = ct.toc_ms();
 
-    CUDA_CHECK(cudaMemcpy(hy.data(), dy, bytes, cudaMemcpyDeviceToHost));
+    int idx = (args.iters - 1) % 2;
+    CUDA_CHECK(cudaMemcpy(hy.data(), dy[idx], bytes, cudaMemcpyDeviceToHost));
 
     const size_t first_index = static_cast<size_t>(compute_index(0, pattern, args.stride, args.offset));
     const size_t last_index = max_index_touched(args.elements, pattern, args.stride, args.offset);
@@ -234,7 +242,9 @@ int main(int argc, char** argv)
 
     append_csv_row(args.out_csv, header, row);
 
-    CUDA_CHECK(cudaFree(dx));
-    CUDA_CHECK(cudaFree(dy));
+    CUDA_CHECK(cudaFree(dx[0]));
+    CUDA_CHECK(cudaFree(dx[1]));
+    CUDA_CHECK(cudaFree(dy[0]));
+    CUDA_CHECK(cudaFree(dy[1]));
     return 0;
 }
